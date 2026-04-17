@@ -21,8 +21,9 @@ logger = logging.getLogger("GmailWatcher")
 class GmailWatcher(BaseWatcher):
     def __init__(self, vault_path: str, credentials_path: str = "credentials.json"):
         super().__init__(vault_path, check_interval=60)
-        self.credentials_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), credentials_path)
-        self.token_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "token.json")
+        root_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        self.credentials_path = os.path.join(root_dir, credentials_path)
+        self.token_path = os.path.join(root_dir, "token.json")
         self.service = None
         self.processed_ids = set()
         
@@ -102,7 +103,9 @@ class GmailWatcher(BaseWatcher):
             content += f"Subject: {header_dict.get('Subject', 'No Subject')}\n"
             content += f"Snippet: {msg.get('snippet', '')}\n"
             
-            filepath = self.needs_action / f'GMAIL_{message["id"]}.md'
+            email_dir = self.needs_action / "email"
+            os.makedirs(email_dir, exist_ok=True)
+            filepath = email_dir / f'GMAIL_{message["id"]}.md'
             
             with open(filepath, 'w', encoding='utf-8') as f:
                 f.write(f"---\ntype: email\npriority: high\nstatus: pending\n---\n\n{content}\n")

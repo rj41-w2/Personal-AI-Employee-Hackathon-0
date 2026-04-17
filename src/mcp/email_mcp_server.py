@@ -16,8 +16,9 @@ logger = logging.getLogger("MCP_Server")
 mcp = FastMCP("Personal_AI_Employee_Skills")
 
 # Config path to vault directory to access the tokens easily
-CREDENTIALS_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "credentials.json")
-TOKEN_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "token.json")
+root_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+CREDENTIALS_PATH = os.path.join(root_dir, "credentials.json")
+TOKEN_PATH = os.path.join(root_dir, "token.json")
 
 def get_gmail_service():
     creds = None

@@ -8,7 +8,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger("Linkedin_MCP")
 
 # Load environment variables (from project root)
-env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
+root_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+env_path = os.path.join(root_dir, ".env")
 load_dotenv(env_path)
 
 mcp = FastMCP("Personal_AI_Employee_Linkedin")
