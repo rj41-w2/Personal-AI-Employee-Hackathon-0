@@ -7,24 +7,8 @@
 credentials.json
 token.json
 
-# --- AI Employee Vault (Personal Data) ---
-# Ignore all contents but preserve the folder structure via .gitkeep
-AI_Employee_Vault/Needs_Action/email/*
-AI_Employee_Vault/Needs_Action/linkedin/*
-AI_Employee_Vault/Pending_Approval/email/*
-AI_Employee_Vault/Pending_Approval/linkedin/*
-AI_Employee_Vault/Approved/email/*
-AI_Employee_Vault/Approved/linkedin/*
-AI_Employee_Vault/Done/email/*
-AI_Employee_Vault/Done/linkedin/*
-AI_Employee_Vault/Archive/email/*
-AI_Employee_Vault/Archive/linkedin/*
-AI_Employee_Vault/Plans/*
-AI_Employee_Vault/Inbox/*
-AI_Employee_Vault/Dashboard.md
-
-# Keep the .gitkeep files that preserve directory structure
-!AI_Employee_Vault/**/.gitkeep
+# --- AI Employee Vault ---
+AI_Employee_Vault/*
 
 # --- Python ---
 __pycache__/

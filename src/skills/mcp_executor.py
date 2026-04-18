@@ -13,6 +13,7 @@ logger = logging.getLogger("MCPExecutor")
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 EMAIL_MCP_SERVER = os.path.join(PROJECT_ROOT, "src", "mcp", "email_mcp_server.py")
 LINKEDIN_MCP_SERVER = os.path.join(PROJECT_ROOT, "src", "mcp", "linkedin_mcp_server.py")
+ODOO_MCP_SERVER = os.path.join(PROJECT_ROOT, "src", "mcp", "odoo_mcp_server.py")
 
 def parse_mcp_arguments(content):
     """
@@ -87,7 +88,7 @@ async def execute_mcp_tool(tool_name, server_script_abs_path, kwargs):
             real_error = e.exceptions[0] if e.exceptions else e
         raise RuntimeError(f"MCP tool '{tool_name}' failed: {type(real_error).__name__}: {real_error}") from real_error
 
-ERROR_KEYWORDS = ["Error", "FAILED", "Failed", "ERROR", "401", "400", "403", "404", "500"]
+ERROR_KEYWORDS = ["Error", "FAILED", "Failed", "ERROR", "401", "400", "403", "404", "500 Internal"]
 
 def _check_mcp_result_for_errors(result):
     """
@@ -157,17 +158,83 @@ def process_approved_file(file_path, base_vault_path):
             args = parse_mcp_arguments(content)
             if not args.get("content"):
                 return False, "Could not parse 'Content:' parameter."
-                
-            result = asyncio.run(execute_mcp_tool("post_to_linkedin", LINKEDIN_MCP_SERVER, 
+
+            result = asyncio.run(execute_mcp_tool("post_to_linkedin", LINKEDIN_MCP_SERVER,
                 {"content": args["content"]}
             ))
-            
+
             success, output = _check_mcp_result_for_errors(result)
             if success:
                 return True, f"Published LinkedIn Post for {file_path.name}."
             else:
                 return False, f"post_to_linkedin FAILED for {file_path.name}: {output}"
-            
+
+        elif "Action: create_invoice" in content or "Action:create_invoice" in content:
+            # Parse invoice parameters directly from content
+            customer_name = None
+            amount = None
+            product_name = "Service"
+            description = ""
+
+            for line in content.split('\n'):
+                if line.startswith('Customer:'):
+                    customer_name = line.replace('Customer:', '').strip()
+                elif line.startswith('Amount:'):
+                    amount_str = line.replace('Amount:', '').strip().replace('$', '').replace(',', '')
+                    try:
+                        amount = float(amount_str)
+                    except ValueError:
+                        pass
+                elif line.startswith('Product:'):
+                    product_name = line.replace('Product:', '').strip()
+                elif line.startswith('Description:'):
+                    description = line.replace('Description:', '').strip()
+
+            if not customer_name or amount is None:
+                return False, f"Missing Customer or Amount in invoice request: {file_path.name}"
+
+            result = asyncio.run(execute_mcp_tool("create_invoice", ODOO_MCP_SERVER,
+                {"customer_name": customer_name, "amount": amount, "product_name": product_name, "description": description}
+            ))
+
+            success, output = _check_mcp_result_for_errors(result)
+            if success:
+                return True, f"Odoo MCP created invoice for {file_path.name}: {output}"
+            else:
+                return False, f"create_invoice FAILED for {file_path.name}: {output}"
+
+        elif "Action: get_accounting_summary" in content or "Action:get_accounting_summary" in content:
+            report_type = "sales"
+            for line in content.split('\n'):
+                if line.startswith('Report:'):
+                    report_type = line.replace('Report:', '').strip()
+
+            result = asyncio.run(execute_mcp_tool("get_accounting_summary", ODOO_MCP_SERVER,
+                {"report_type": report_type}
+            ))
+
+            success, output = _check_mcp_result_for_errors(result)
+            if success:
+                return True, f"Odoo accounting summary for {file_path.name}: {output}"
+            else:
+                return False, f"get_accounting_summary FAILED for {file_path.name}: {output}"
+
+        elif "Action: list_partners" in content or "Action:list_partners" in content:
+            search_term = ""
+            for line in content.split('\n'):
+                if line.startswith('Search:'):
+                    search_term = line.replace('Search:', '').strip()
+
+            result = asyncio.run(execute_mcp_tool("list_partners", ODOO_MCP_SERVER,
+                {"search_term": search_term}
+            ))
+
+            success, output = _check_mcp_result_for_errors(result)
+            if success:
+                return True, f"Odoo partners list for {file_path.name}: {output}"
+            else:
+                return False, f"list_partners FAILED for {file_path.name}: {output}"
+
         else:
             return False, f"No recognized Action found in {file_path.name}."
             
