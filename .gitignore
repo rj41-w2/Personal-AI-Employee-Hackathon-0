@@ -4,11 +4,26 @@
 
 # --- Secrets & Credentials (CRITICAL) ---
 .env
+.env.local
+.env.*.local
 credentials.json
 token.json
+*.pem
 
-# --- AI Employee Vault ---
-AI_Employee_Vault/*
+# --- AI Employee Vault (Data Privacy) ---
+# Ignore all contents but keep directory structure
+AI_Employee_Vault/**/*
+!AI_Employee_Vault/
+!AI_Employee_Vault/**/.gitkeep
+AI_Employee_Vault/.obsidian/
+AI_Employee_Vault/loop_memory.json
+
+# --- Dashboard Node Modules ---
+ai-dashboard/node_modules/
+ai-dashboard/.next/
+ai-dashboard/out/
+ai-dashboard/build/
+ai-dashboard/.env.local
 
 # --- Python ---
 __pycache__/
