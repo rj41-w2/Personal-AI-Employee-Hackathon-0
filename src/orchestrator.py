@@ -54,12 +54,35 @@ class Orchestrator:
     def process_approved(self):
         for file_path in self.approved.rglob("*.md"):
             logger.info(f"Routing approved execution: {file_path.name}.")
+            
+            # Determine category from filename
+            category = "email" if "GMAIL_" in file_path.name else "linkedin"
+            
             try:
-                status_msg = process_approved_file(file_path, self.vault_path)
-                if status_msg:
-                    update_dashboard(self.vault_path, status_msg)
+                success, status_msg = process_approved_file(file_path, self.vault_path)
             except Exception as e:
-                logger.error(f"Execution routing error on {file_path.name}: {e}")
+                success = False
+                status_msg = f"EXCEPTION during execution of {file_path.name}: {e}"
+                logger.error(status_msg)
+            
+            if success:
+                # SUCCESS: Move to Done/{category}/
+                dest_dir = self.vault_path / "Done" / category
+                dest_dir.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(file_path), str(dest_dir / file_path.name))
+                logger.info(f"SUCCESS: Moved {file_path.name} -> Done/{category}/")
+            else:
+                # FAILURE: Move to Rejected/{category}/
+                dest_dir = self.vault_path / "Rejected" / category
+                dest_dir.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(file_path), str(dest_dir / file_path.name))
+                logger.warning(f"REJECTED: Moved {file_path.name} -> Rejected/{category}/")
+            
+            # Always log to dashboard regardless of outcome
+            try:
+                update_dashboard(self.vault_path, status_msg)
+            except Exception:
+                pass
 
 if __name__ == "__main__":
     # Dynamically resolve vault path relative to project root

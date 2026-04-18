@@ -41,7 +41,17 @@ def draft_linkedin_post(file_path, base_vault_path, model=None):
         (plan_dir / plan_filename).write_text(f"{plan_text}\n\n---\n**Trigger**: {file_path.name}", encoding='utf-8')
         
         if len(parts) > 1:
-            action_text = f"## Action:{parts[1]}"
+            raw_action = parts[1].strip()
+            # If the LLM didn't include a "Content:" label, inject one
+            if not raw_action.startswith("Content:") and "\nContent:" not in raw_action:
+                # Find where "post_to_linkedin" header ends and content begins
+                action_lines = raw_action.split('\n', 1)
+                header = action_lines[0].strip()  # e.g., " post_to_linkedin"
+                body_text = action_lines[1].strip() if len(action_lines) > 1 else ""
+                action_text = f"## Action: {header}\nContent:\n{body_text}"
+            else:
+                action_text = f"## Action: {raw_action}"
+            
             new_filename = f"PENDING_{timestamp}_{file_path.name}"
             pending_dir = base_vault_path / "Pending_Approval" / "linkedin"
             pending_dir.mkdir(parents=True, exist_ok=True)

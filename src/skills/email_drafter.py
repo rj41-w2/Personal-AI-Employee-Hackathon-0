@@ -41,7 +41,7 @@ def draft_email(file_path, base_vault_path, model=None):
         (plan_dir / plan_filename).write_text(f"{plan_text}\n\n---\n**Trigger**: {file_path.name}", encoding='utf-8')
         
         if len(parts) > 1:
-            action_text = f"## Action:{parts[1]}"
+            action_text = f"## Action: {parts[1].strip()}"
             new_filename = f"PENDING_{timestamp}_{file_path.name}"
             pending_dir = base_vault_path / "Pending_Approval" / "email"
             pending_dir.mkdir(parents=True, exist_ok=True)

@@ -1,4 +1,5 @@
 import os
+import sys
 import requests
 import logging
 from dotenv import load_dotenv
@@ -26,7 +27,12 @@ def post_to_linkedin(content: str) -> str:
     person_urn = os.getenv("LINKEDIN_PERSON_URN")
     
     if not access_token or not person_urn:
-        raise ValueError("Missing LINKEDIN_ACCESS_TOKEN or LINKEDIN_PERSON_URN in .env file.")
+        msg = "ERROR: Missing LINKEDIN_ACCESS_TOKEN or LINKEDIN_PERSON_URN in .env file."
+        print(msg, file=sys.stderr)
+        return msg
+        
+    # Log what we're sending for debugging
+    print(f"LINKEDIN DEBUG: Using URN={person_urn}, Token={access_token[:10]}...", file=sys.stderr)
         
     url = "https://api.linkedin.com/v2/ugcPosts"
     
@@ -52,16 +58,22 @@ def post_to_linkedin(content: str) -> str:
         }
     }
     
-    try:
-        response = requests.post(url, headers=headers, json=payload)
-        response.raise_for_status()
+    response = requests.post(url, headers=headers, json=payload)
+    
+    # LOUD stderr logging so you always see the raw API response in terminal
+    print(f"LINKEDIN API RESPONSE: {response.status_code} - {response.text}", file=sys.stderr)
+    
+    # Strict validation: LinkedIn returns 201 on successful post creation
+    if response.status_code == 201:
         post_id = response.headers.get("x-restli-id", "Unknown_ID")
         logger.info(f"Successfully posted to LinkedIn! Post ID: {post_id}")
-        return f"Successfully posted to LinkedIn. ID: {post_id}"
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Failed to post to LinkedIn: {e}\nResponse: {e.response.text if hasattr(e, 'response') and e.response else ''}")
-        return f"Error executing LinkedIn Post: {str(e)}"
+        return f"SUCCESS: Posted to LinkedIn. ID: {post_id}"
+    else:
+        error_msg = f"ERROR: LinkedIn API Failed (HTTP {response.status_code}): {response.text}"
+        logger.error(error_msg)
+        return error_msg
 
 if __name__ == "__main__":
     logger.info("Starting up standalone LinkedIn MCP server on stdio...")
     mcp.run(transport='stdio')
+

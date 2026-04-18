@@ -15,6 +15,11 @@ EMAIL_MCP_SERVER = os.path.join(PROJECT_ROOT, "src", "mcp", "email_mcp_server.py
 LINKEDIN_MCP_SERVER = os.path.join(PROJECT_ROOT, "src", "mcp", "linkedin_mcp_server.py")
 
 def parse_mcp_arguments(content):
+    """
+    Parses To/Subject/Body for emails and Content for LinkedIn posts.
+    Includes a fallback: if no explicit Content: label is found for LinkedIn,
+    it extracts everything between the Action header and the --- delimiter.
+    """
     to_email = None
     subject = None
     body = []
@@ -29,12 +34,31 @@ def parse_mcp_arguments(content):
             in_body = True
         elif in_body and not line.startswith('---'):
             body.append(line)
+    
+    parsed_content = "\n".join(body).strip(' \t\n\r')
+    
+    # Fallback for LinkedIn: if no Content:/Body: label was found,
+    # grab everything between "Action: post_to_linkedin" and "---"
+    if not parsed_content and "post_to_linkedin" in content:
+        fallback_lines = []
+        in_action = False
+        for line in content.split('\n'):
+            if "Action:" in line and "post_to_linkedin" in line:
+                in_action = True
+                continue
+            elif in_action and line.strip().startswith('---'):
+                break
+            elif in_action:
+                fallback_lines.append(line)
+        parsed_content = "\n".join(fallback_lines).strip(' \t\n\r')
+        if parsed_content:
+            logger.info("Used fallback parser: extracted content between Action header and --- delimiter.")
             
     return {
         "to_email": to_email,
         "subject": subject,
         "body": "\n".join(body).strip(' \t\n\r'),
-        "content": "\n".join(body).strip(' \t\n\r')
+        "content": parsed_content
     }
 
 async def execute_mcp_tool(tool_name, server_script_abs_path, kwargs):
@@ -63,50 +87,93 @@ async def execute_mcp_tool(tool_name, server_script_abs_path, kwargs):
             real_error = e.exceptions[0] if e.exceptions else e
         raise RuntimeError(f"MCP tool '{tool_name}' failed: {type(real_error).__name__}: {real_error}") from real_error
 
+ERROR_KEYWORDS = ["Error", "FAILED", "Failed", "ERROR", "401", "400", "403", "404", "500"]
+
+def _check_mcp_result_for_errors(result):
+    """
+    Extracts the text output from the MCP result and scans it for error indicators.
+    Returns (is_success: bool, output_text: str).
+    """
+    # Extract all text from result content blocks
+    output_text = ""
+    if hasattr(result, 'content') and result.content:
+        output_text = " | ".join(
+            getattr(c, 'text', str(c)) for c in result.content
+        )
+    
+    # Also check structuredContent if present
+    if hasattr(result, 'structuredContent') and result.structuredContent:
+        sc = str(result.structuredContent)
+        output_text = f"{output_text} | {sc}" if output_text else sc
+
+    logger.info(f"MCP raw output: {output_text}")
+    
+    # Check isError flag first
+    if hasattr(result, 'isError') and result.isError:
+        logger.error(f"MCP returned isError=True: {output_text}")
+        return False, output_text
+    
+    # Scan text for error keywords
+    for keyword in ERROR_KEYWORDS:
+        if keyword in output_text:
+            logger.error(f"MCP output contains error keyword '{keyword}': {output_text}")
+            return False, output_text
+    
+    # Check for SUCCESS prefix (our LinkedIn server explicitly returns this)
+    if output_text.startswith("SUCCESS:"):
+        return True, output_text
+    
+    # No errors found
+    return True, output_text
+
+
 def process_approved_file(file_path, base_vault_path):
     """
-    Executes an approved task and handles its movement.
-    Returns a status message on success to push to the dashboard log, or raises an exception.
+    Executes an approved task via MCP.
+    Returns (success: bool, status_message: str).
+    Does NOT move files — the orchestrator handles that.
     """
-    content = file_path.read_text(encoding='utf-8')
-    # Detect category by checking if GMAIL_ appears anywhere in the filename,
-    # because drafter prefixes like PENDING_ shift the original prefix position.
-    category = "email" if "GMAIL_" in file_path.name else "linkedin"
-    
-    category_done_dir = base_vault_path / "Done" / category
-    category_done_dir.mkdir(parents=True, exist_ok=True)
+    import traceback
     
     try:
-        if "Action: send_email" in content:
+        content = file_path.read_text(encoding='utf-8')
+        
+        if "Action: send_email" in content or "Action:send_email" in content:
             args = parse_mcp_arguments(content)
             if not args.get("to_email"):
-                raise ValueError(f"Could not parse 'To:' parameter in {file_path.name}.")
+                return False, f"Could not parse 'To:' parameter in {file_path.name}."
                 
             result = asyncio.run(execute_mcp_tool("send_email", EMAIL_MCP_SERVER, 
                 {"to_email": args["to_email"], "subject": args["subject"], "body": args["body"]}
             ))
             
-            logger.info(f"MCP Result: {result}")
-            shutil.move(str(file_path), str(category_done_dir / file_path.name))
-            return f"MCP Protocol Server executed 'send_email' for {file_path.name}."
+            success, output = _check_mcp_result_for_errors(result)
+            if success:
+                return True, f"MCP executed 'send_email' for {file_path.name}."
+            else:
+                return False, f"send_email FAILED for {file_path.name}: {output}"
 
-        elif "Action: post_to_linkedin" in content:
+        elif "Action: post_to_linkedin" in content or "Action:post_to_linkedin" in content:
             args = parse_mcp_arguments(content)
             if not args.get("content"):
-                raise ValueError("Could not parse 'Content:' parameter.")
+                return False, "Could not parse 'Content:' parameter."
                 
             result = asyncio.run(execute_mcp_tool("post_to_linkedin", LINKEDIN_MCP_SERVER, 
                 {"content": args["content"]}
             ))
             
-            logger.info(f"MCP Result: {result}")
-            shutil.move(str(file_path), str(category_done_dir / file_path.name))
-            return f"Published LinkedIn Post via API for {file_path.name}."
+            success, output = _check_mcp_result_for_errors(result)
+            if success:
+                return True, f"Published LinkedIn Post for {file_path.name}."
+            else:
+                return False, f"post_to_linkedin FAILED for {file_path.name}: {output}"
             
         else:
-            return None
+            return False, f"No recognized Action found in {file_path.name}."
             
     except Exception as e:
-        logger.error(f"Execution failed for {file_path.name}: {type(e).__name__}: {e}")
-        shutil.move(str(file_path), str(category_done_dir / f"FAILED_{file_path.name}"))
-        raise e
+        # Print the FULL traceback to terminal so the exact crash point is visible
+        full_traceback = traceback.format_exc()
+        logger.error(f"MCP EXECUTOR CRASH for {file_path.name}:\n{full_traceback}")
+        return False, f"EXECUTOR CRASHED: {type(e).__name__}: {e}"
+
