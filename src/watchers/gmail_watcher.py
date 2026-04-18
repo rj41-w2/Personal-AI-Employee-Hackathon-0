@@ -118,9 +118,12 @@ class GmailWatcher(BaseWatcher):
             return None
 
 if __name__ == "__main__":
-    vault_path = r"c:\Users\rehan\Projects\Personal-AI-Employee-Hackathon-0\AI_Employee_Vault"
+    # Dynamically resolve vault path: src/watchers/ -> src/ -> project root
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    vault_path = os.path.join(project_root, "AI_Employee_Vault")
     watcher = GmailWatcher(vault_path)
     try:
         watcher.run()
     except KeyboardInterrupt:
         logger.info("Gracefully shut down GmailWatcher.")
+

@@ -1,7 +1,13 @@
+import os
 import time
 import shutil
 import logging
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load .env from project root
+PROJECT_ROOT = Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+load_dotenv(PROJECT_ROOT / ".env")
 
 from skills.email_drafter import draft_email
 from skills.linkedin_drafter import draft_linkedin_post
@@ -24,7 +30,8 @@ class Orchestrator:
     def process_needs_action(self):
         for file_path in self.needs_action.rglob("*.md"):
             logger.info(f"Routing new task: {file_path.name}")
-            category = "email" if file_path.name.startswith("GMAIL_") else "linkedin"
+            # Detect category: use 'in' to handle any prefix chains (e.g., PENDING_timestamp_GMAIL_...)
+            category = "email" if "GMAIL_" in file_path.name else "linkedin"
             
             if category == "email":
                 draft_email(file_path, self.vault_path)
@@ -55,7 +62,8 @@ class Orchestrator:
                 logger.error(f"Execution routing error on {file_path.name}: {e}")
 
 if __name__ == "__main__":
-    vault_path = r"c:\Users\rehan\Projects\Personal-AI-Employee-Hackathon-0\AI_Employee_Vault"
+    # Dynamically resolve vault path relative to project root
+    vault_path = str(PROJECT_ROOT / "AI_Employee_Vault")
     orchestrator = Orchestrator(vault_path)
     
     logger.info("Starting Ultra-Lightweight Decoupled Orchestrator...")
@@ -67,3 +75,4 @@ if __name__ == "__main__":
             time.sleep(10)
     except KeyboardInterrupt:
         logger.info("Shutting down Orchestrator.")
+

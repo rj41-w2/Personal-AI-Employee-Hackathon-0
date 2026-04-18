@@ -50,7 +50,10 @@ New file dropped for processing. Check the contents and write an appropriate res
 ''')
 
 if __name__ == "__main__":
-    vault_path = Path(r"c:\Users\rehan\Projects\Personal-AI-Employee-Hackathon-0\AI_Employee_Vault")
+    # Dynamically resolve vault path: src/watchers/ -> src/ -> project root
+    import os
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    vault_path = Path(os.path.join(project_root, "AI_Employee_Vault"))
     
     event_handler = DropFolderHandler(str(vault_path))
     observer = Observer()
@@ -69,3 +72,4 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         observer.stop()
     observer.join()
+
