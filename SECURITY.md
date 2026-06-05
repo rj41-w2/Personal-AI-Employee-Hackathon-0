@@ -7,6 +7,7 @@
 - Keep the API bound to `127.0.0.1` unless you are intentionally deploying behind authentication and TLS.
 - Set `API_CORS_ORIGINS` to exact dashboard origins. Do not use `*` for a machine that can reach private services.
 - Replace demo Odoo passwords before connecting to real company data.
+- Keep `ENABLE_LIVE_ACTIONS=false` unless you are ready for approved files to execute real actions.
 
 ## Reporting Issues
 

@@ -1,8 +1,8 @@
 import os
 import sys
 import asyncio
-import shutil
 import logging
+from email.utils import parseaddr
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
@@ -14,6 +14,85 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 EMAIL_MCP_SERVER = os.path.join(PROJECT_ROOT, "src", "mcp", "email_mcp_server.py")
 LINKEDIN_MCP_SERVER = os.path.join(PROJECT_ROOT, "src", "mcp", "linkedin_mcp_server.py")
 ODOO_MCP_SERVER = os.path.join(PROJECT_ROOT, "src", "mcp", "odoo_mcp_server.py")
+TRUE_VALUES = {"1", "true", "yes", "on"}
+
+
+def _env_bool(name, default=False):
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in TRUE_VALUES
+
+
+def _csv_env(name):
+    value = os.getenv(name, "")
+    return [item.strip().lower() for item in value.split(",") if item.strip()]
+
+
+def _parse_metadata(content):
+    metadata = {}
+    for line in content.splitlines():
+        if ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        normalized_key = key.strip().lower().replace("-", "_")
+        metadata[normalized_key] = value.strip()
+    return metadata
+
+
+def _has_human_approval(content):
+    metadata = _parse_metadata(content)
+    approval = metadata.get("approval", "").lower()
+    approved_by = metadata.get("approved_by", "")
+    return approval == "approved" and bool(approved_by)
+
+
+def _email_allowed(to_email):
+    _, parsed_email = parseaddr(to_email or "")
+    parsed_email = parsed_email.lower()
+    if not parsed_email or "@" not in parsed_email:
+        return False, "Invalid email recipient."
+
+    allowed_recipients = set(_csv_env("EMAIL_ALLOWED_RECIPIENTS"))
+    allowed_domains = set(_csv_env("EMAIL_ALLOWED_DOMAINS"))
+    domain = parsed_email.rsplit("@", 1)[1]
+
+    if parsed_email in allowed_recipients or domain in allowed_domains:
+        return True, ""
+
+    if not allowed_recipients and not allowed_domains:
+        return False, "Email sending requires EMAIL_ALLOWED_RECIPIENTS or EMAIL_ALLOWED_DOMAINS."
+
+    return False, f"Recipient '{parsed_email}' is not in the configured email allowlist."
+
+
+def _guard_live_action(action_name, content, args=None):
+    if not _env_bool("ENABLE_LIVE_ACTIONS"):
+        return False, True, f"DRY RUN: ENABLE_LIVE_ACTIONS is not true; skipped '{action_name}'."
+
+    if not _has_human_approval(content):
+        return False, False, (
+            "Blocked live execution. Approved files must include "
+            "'Approval: approved' and 'Approved_By: <name>'."
+        )
+
+    args = args or {}
+
+    if action_name == "send_email":
+        allowed, reason = _email_allowed(args.get("to_email"))
+        if not allowed:
+            return False, False, f"Blocked email send. {reason}"
+
+    if action_name == "post_to_linkedin" and not _env_bool("LINKEDIN_POSTING_ENABLED"):
+        return False, False, "Blocked LinkedIn post. Set LINKEDIN_POSTING_ENABLED=true to allow it."
+
+    if action_name == "create_invoice" and not _env_bool("ODOO_WRITE_ACTIONS_ENABLED"):
+        return False, False, "Blocked Odoo write action. Set ODOO_WRITE_ACTIONS_ENABLED=true to allow it."
+
+    if action_name in {"get_accounting_summary", "list_partners"} and not _env_bool("ODOO_READ_ACTIONS_ENABLED"):
+        return False, False, "Blocked Odoo read action. Set ODOO_READ_ACTIONS_ENABLED=true to allow it."
+
+    return True, False, ""
 
 def parse_mcp_arguments(content):
     """
@@ -143,7 +222,11 @@ def process_approved_file(file_path, base_vault_path):
             args = parse_mcp_arguments(content)
             if not args.get("to_email"):
                 return False, f"Could not parse 'To:' parameter in {file_path.name}."
-                
+
+            allowed, dry_run, reason = _guard_live_action("send_email", content, args)
+            if not allowed:
+                return dry_run, f"{reason} File: {file_path.name}"
+
             result = asyncio.run(execute_mcp_tool("send_email", EMAIL_MCP_SERVER, 
                 {"to_email": args["to_email"], "subject": args["subject"], "body": args["body"]}
             ))
@@ -158,6 +241,10 @@ def process_approved_file(file_path, base_vault_path):
             args = parse_mcp_arguments(content)
             if not args.get("content"):
                 return False, "Could not parse 'Content:' parameter."
+
+            allowed, dry_run, reason = _guard_live_action("post_to_linkedin", content, args)
+            if not allowed:
+                return dry_run, f"{reason} File: {file_path.name}"
 
             result = asyncio.run(execute_mcp_tool("post_to_linkedin", LINKEDIN_MCP_SERVER,
                 {"content": args["content"]}
@@ -193,8 +280,18 @@ def process_approved_file(file_path, base_vault_path):
             if not customer_name or amount is None:
                 return False, f"Missing Customer or Amount in invoice request: {file_path.name}"
 
+            action_args = {
+                "customer_name": customer_name,
+                "amount": amount,
+                "product_name": product_name,
+                "description": description
+            }
+            allowed, dry_run, reason = _guard_live_action("create_invoice", content, action_args)
+            if not allowed:
+                return dry_run, f"{reason} File: {file_path.name}"
+
             result = asyncio.run(execute_mcp_tool("create_invoice", ODOO_MCP_SERVER,
-                {"customer_name": customer_name, "amount": amount, "product_name": product_name, "description": description}
+                action_args
             ))
 
             success, output = _check_mcp_result_for_errors(result)
@@ -208,6 +305,10 @@ def process_approved_file(file_path, base_vault_path):
             for line in content.split('\n'):
                 if line.startswith('Report:'):
                     report_type = line.replace('Report:', '').strip()
+
+            allowed, dry_run, reason = _guard_live_action("get_accounting_summary", content, {"report_type": report_type})
+            if not allowed:
+                return dry_run, f"{reason} File: {file_path.name}"
 
             result = asyncio.run(execute_mcp_tool("get_accounting_summary", ODOO_MCP_SERVER,
                 {"report_type": report_type}
@@ -224,6 +325,10 @@ def process_approved_file(file_path, base_vault_path):
             for line in content.split('\n'):
                 if line.startswith('Search:'):
                     search_term = line.replace('Search:', '').strip()
+
+            allowed, dry_run, reason = _guard_live_action("list_partners", content, {"search_term": search_term})
+            if not allowed:
+                return dry_run, f"{reason} File: {file_path.name}"
 
             result = asyncio.run(execute_mcp_tool("list_partners", ODOO_MCP_SERVER,
                 {"search_term": search_term}
@@ -243,4 +348,3 @@ def process_approved_file(file_path, base_vault_path):
         full_traceback = traceback.format_exc()
         logger.error(f"MCP EXECUTOR CRASH for {file_path.name}:\n{full_traceback}")
         return False, f"EXECUTOR CRASHED: {type(e).__name__}: {e}"
-

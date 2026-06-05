@@ -1,129 +1,127 @@
-# 🤖 Digital FTE: Personal AI Employee
+# Digital FTE: Personal AI Employee
 
-**Tagline:** *Your life and business on autopilot. Local-first, agent-driven, human-in-the-loop.*
+Your life and business on autopilot: local-first, agent-driven, and human-in-the-loop.
 
-This project is an autonomous "Digital FTE" (Full-Time Equivalent) built for the **Personal AI Employee Hackathon**. It uses a local-first architecture combining **Claude Code** for reasoning, **Obsidian** for management, and **MCP (Model Context Protocol)** for action execution.
+This project is an autonomous "Digital FTE" built for the Personal AI Employee Hackathon. It combines an Obsidian vault, Python watchers, local LLM drafting, MCP action servers, and a Next.js dashboard.
 
----
+## Architecture
 
-## 🏗️ Architecture: Perception → Reasoning → Action
+The system runs as a perception -> reasoning -> action loop:
 
-The system operates in a continuous loop:
-1.  **Perception (Watchers):** Lightweight Python scripts monitor Gmail, LinkedIn, and the filesystem. When a trigger is detected, they create a Markdown file in the `/Needs_Action` folder.
-2.  **Reasoning (Claude Code & Orchestrator):** The `orchestrator.py` picks up these files and uses AI Skills to draft plans, emails, or posts.
-3.  **Action (MCP Servers):** Once a human approves the draft (by moving it to the `/Approved` folder), the system executes the action via MCP (e.g., sending an email or posting to LinkedIn).
+1. Watchers monitor Gmail, Odoo, LinkedIn, and local files.
+2. Watchers create Markdown tasks in `AI_Employee_Vault/Needs_Action`.
+3. The orchestrator drafts plans and actions into `Pending_Approval`.
+4. A human reviews the draft and moves it into `Approved`.
+5. The MCP executor validates approval metadata and environment safety flags before any live action runs.
 
----
-
-## 📁 Project Structure
+## Project Structure
 
 ```text
 .
-├── AI_Employee_Vault/          # Obsidian Vault (The Dashboard & Memory)
-│   ├── Dashboard.md            # Real-time status updates (Markdown)
-│   ├── Needs_Action/           # Tasks waiting for AI processing
-│   ├── Pending_Approval/       # AI drafts waiting for Human review
-│   ├── Approved/               # Human-approved tasks
-│   └── Done/                   # Successfully completed tasks
-├── ai-dashboard/               # Next.js Web Dashboard
-├── src/
-│   ├── orchestrator.py         # Main traffic controller
-│   ├── api_server.py           # FastAPI backend for the web dashboard
-│   ├── mcp/                    # MCP Servers (Email, LinkedIn, Odoo)
-│   ├── skills/                 # AI Logic (Drafters, MCP Executor)
-│   ├── watchers/               # Sensors (Gmail, Filesystem, LinkedIn)
-│   └── prompts/                # Rules and Guardrails
-├── GEMINI.md                   # AI Agent Instruction Context
-└── main.py                     # Entry point
+|-- AI_Employee_Vault/          # Obsidian vault and workflow folders
+|   |-- Dashboard.md            # Real-time status updates
+|   |-- Needs_Action/           # New tasks waiting for AI drafting
+|   |-- Pending_Approval/       # Drafts waiting for human review
+|   |-- Approved/               # Human-approved tasks
+|   `-- Done/                   # Successfully completed tasks
+|-- ai-dashboard/               # Next.js dashboard
+|-- src/
+|   |-- orchestrator.py         # Main workflow controller
+|   |-- api_server.py           # FastAPI backend for the dashboard
+|   |-- mcp/                    # Email, LinkedIn, and Odoo MCP servers
+|   |-- skills/                 # Drafters and MCP executor
+|   |-- watchers/               # Gmail, Odoo, filesystem, and LinkedIn watchers
+|   `-- prompts/                # Prompt rules and guardrails
+|-- GEMINI.md                   # Agent instruction context
+`-- main.py
 ```
 
----
-
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
-- **Python:** 3.14 or higher
-- **Node.js:** v24+ (for MCP servers and Web Dashboard)
-- **Obsidian:** Installed and pointed to `AI_Employee_Vault`
-- **Claude Code:** Installed and configured
+
+- Python 3.11 or newer
+- Node.js 20.9 or newer
+- Obsidian pointed at `AI_Employee_Vault`
+- Ollama running locally if you use the built-in local LLM drafting flow
 
 ### Installation
 
-1.  **Clone the repository:**
-    ```bash
-    git clone <your-repo-url>
-    cd Personal-AI-Employee-Hackathon-0
-    ```
+```bash
+git clone <your-repo-url>
+cd Personal-AI-Employee-Hackathon-0
 
-2.  **Set up Python Virtual Environment:**
-    ```bash
-    python -m venv .venv
-    # Windows:
-    .venv\Scripts\activate
-    # Linux/Mac:
-    source .venv/bin/activate
-    
-    pip install -r requirements.txt
-    ```
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
 
-3.  **Set up Dashboard:**
-    ```bash
-    cd ai-dashboard
-    npm install
-    cd ..
-    ```
+cd ai-dashboard
+npm install
+cd ..
 
-4.  **Configuration:**
-    Copy `.env.example` to `.env` and fill in your API keys:
-    ```bash
-    cp .env.example .env
-    ```
+copy .env.example .env
+```
 
----
+Fill in `.env` with your local credentials. Never commit real secrets.
 
-## 🛠️ Usage
+## Usage
 
-### 1. Start the Orchestrator
-The orchestrator manages the flow between folders and executes approved tasks:
+Start the orchestrator:
+
 ```bash
 python src/orchestrator.py
 ```
 
-### 2. Start the Watchers
-Run the watchers to begin monitoring your communications (use separate terminals):
+Start watchers in separate terminals:
+
 ```bash
 python src/watchers/gmail_watcher.py
 python src/watchers/filesystem_watcher.py
+python src/watchers/odoo_watcher.py
 ```
 
-### 3. Start the Dashboard (Optional)
-To monitor your Digital FTE via a web interface:
+Start the dashboard:
+
 ```bash
-# Terminal 1: API Backend
 python src/api_server.py
 
-# Terminal 2: Frontend
 cd ai-dashboard
 npm run dev
 ```
 
-### 4. Human-in-the-Loop Workflow
-1.  Open **Obsidian** and monitor the `Dashboard.md`.
-2.  Check `Pending_Approval/` for any drafts created by the AI.
-3.  If satisfied, move the file to the `Approved/` folder.
-4.  The Orchestrator will detect the move and execute the task via MCP.
+## Live Action Safety
 
----
+Moving a file to `AI_Employee_Vault/Approved` is not enough to send an email, post to LinkedIn, or write to Odoo. Live execution is blocked unless all required safety checks pass.
 
-## 🛡️ Security & Privacy
-- **Local-First:** All reasoning and logs stay on your local machine within the Obsidian vault.
-- **Human Approval:** No sensitive actions (emails, payments, social posts) are taken without manual movement of files to the `Approved` folder.
-- **Secret Management:** Credentials are never stored in the vault; they are managed via `.env`.
+To enable live actions, set:
 
----
+```env
+ENABLE_LIVE_ACTIONS=true
+```
 
-## 📖 AI Instructions
-This project includes a `GEMINI.md` file which serves as a foundational context for AI agents working on this codebase. It defines architecture, conventions, and workflows.
+Then add approval metadata to the approved Markdown file:
 
----
-*Built for the Personal AI Employee Hackathon 2026.*
+```text
+Approval: approved
+Approved_By: your-name
+```
+
+Additional per-action guards:
+
+- Email sending requires `EMAIL_ALLOWED_RECIPIENTS` or `EMAIL_ALLOWED_DOMAINS`.
+- LinkedIn posting requires `LINKEDIN_POSTING_ENABLED=true`.
+- Odoo write actions require `ODOO_WRITE_ACTIONS_ENABLED=true`.
+- Odoo read actions require `ODOO_READ_ACTIONS_ENABLED=true`.
+
+With live actions disabled, approved files are treated as dry runs and no external MCP tool is called.
+
+## Security & Privacy
+
+- Local-first by default.
+- Real secrets belong in `.env`, not in Git.
+- Gmail OAuth files (`credentials.json`, `token.json`) are ignored by `.gitignore`.
+- Review `SECURITY.md` before publishing or deploying.
+
+## License
+
+MIT. See `LICENSE`.
