@@ -55,7 +55,7 @@ IMPORTANT: Replace angle brackets with actual values. Do NOT deviate from this s
     }
 
     try:
-        response = requests.post(f"{OLLAMA_BASE_URL}/api/chat", json=payload)
+        response = requests.post(f"{OLLAMA_BASE_URL}/api/chat", json=payload, timeout=60)
         response.raise_for_status()
         text_content = response.json().get("message", {}).get("content", "")
 

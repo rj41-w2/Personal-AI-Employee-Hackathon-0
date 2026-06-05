@@ -139,9 +139,12 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    fetchData();
+    const initialFetch = setTimeout(fetchData, 0);
     const interval = setInterval(fetchData, 5000);
-    return () => clearInterval(interval);
+    return () => {
+      clearTimeout(initialFetch);
+      clearInterval(interval);
+    };
   }, [fetchData]);
 
   if (loading && !data) {

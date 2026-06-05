@@ -3,6 +3,7 @@ import sys
 import logging
 from datetime import datetime, date
 from typing import List, Dict, Optional, Any
+from urllib.parse import urlparse
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 
@@ -17,8 +18,8 @@ load_dotenv(env_path)
 # Odoo configuration from environment
 ODOO_URL = os.getenv("ODOO_URL", "http://localhost:8069")
 ODOO_DB = os.getenv("ODOO_DB", "ai_employee_db")
-ODOO_USERNAME = os.getenv("ODOO_USERNAME", "admin")
-ODOO_PASSWORD = os.getenv("ODOO_PASSWORD", "admin")
+ODOO_USERNAME = os.getenv("ODOO_USERNAME", "")
+ODOO_PASSWORD = os.getenv("ODOO_PASSWORD", "")
 
 # Try to import odoorpc, fallback to requests
 ODOORPC_AVAILABLE = False
@@ -78,7 +79,8 @@ class OdooClient:
         response = requests.post(
             endpoint,
             json=payload,
-            headers={"Content-Type": "application/json"}
+            headers={"Content-Type": "application/json"},
+            timeout=30
         )
         response.raise_for_status()
         result = response.json()
@@ -90,8 +92,14 @@ class OdooClient:
 
     def authenticate(self) -> int:
         """Authenticate with Odoo and return user ID."""
+        if not self.username or not self.password:
+            raise ValueError("ODOO_USERNAME and ODOO_PASSWORD must be set in .env before using Odoo tools.")
+
         if ODOORPC_AVAILABLE:
-            self._odoo = odoorpc.ODOO(self.url.replace("http://", "").replace("https://", "").split(":")[0], port=8069)
+            parsed_url = urlparse(self.url)
+            host = parsed_url.hostname or self.url
+            port = parsed_url.port or (443 if parsed_url.scheme == "https" else 8069)
+            self._odoo = odoorpc.ODOO(host, port=port)
             self._odoo.login(self.db, self.username, self.password)
             self._uid = self._odoo.env.uid
             return self._uid

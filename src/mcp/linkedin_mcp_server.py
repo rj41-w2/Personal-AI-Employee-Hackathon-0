@@ -31,9 +31,6 @@ def post_to_linkedin(content: str) -> str:
         print(msg, file=sys.stderr)
         return msg
         
-    # Log what we're sending for debugging
-    print(f"LINKEDIN DEBUG: Using URN={person_urn}, Token={access_token[:10]}...", file=sys.stderr)
-        
     url = "https://api.linkedin.com/v2/ugcPosts"
     
     headers = {
@@ -58,10 +55,7 @@ def post_to_linkedin(content: str) -> str:
         }
     }
     
-    response = requests.post(url, headers=headers, json=payload)
-    
-    # LOUD stderr logging so you always see the raw API response in terminal
-    print(f"LINKEDIN API RESPONSE: {response.status_code} - {response.text}", file=sys.stderr)
+    response = requests.post(url, headers=headers, json=payload, timeout=30)
     
     # Strict validation: LinkedIn returns 201 on successful post creation
     if response.status_code == 201:
@@ -69,11 +63,11 @@ def post_to_linkedin(content: str) -> str:
         logger.info(f"Successfully posted to LinkedIn! Post ID: {post_id}")
         return f"SUCCESS: Posted to LinkedIn. ID: {post_id}"
     else:
-        error_msg = f"ERROR: LinkedIn API Failed (HTTP {response.status_code}): {response.text}"
+        request_id = response.headers.get("x-li-fabric") or response.headers.get("x-restli-id") or "unknown"
+        error_msg = f"ERROR: LinkedIn API Failed (HTTP {response.status_code}, request={request_id})"
         logger.error(error_msg)
         return error_msg
 
 if __name__ == "__main__":
     logger.info("Starting up standalone LinkedIn MCP server on stdio...")
     mcp.run(transport='stdio')
-

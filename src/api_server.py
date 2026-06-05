@@ -26,6 +26,12 @@ logger = logging.getLogger("APIServer")
 VAULT_PATH = PROJECT_ROOT / "AI_Employee_Vault"
 
 
+def _csv_env(name: str, default: str) -> list[str]:
+    """Read a comma-separated environment variable as a clean list."""
+    raw_value = os.getenv(name, default)
+    return [item.strip() for item in raw_value.split(",") if item.strip()]
+
+
 def count_files_in_dir(directory: Path, recursive: bool = True) -> dict:
     """Count markdown files in a directory, broken down by subfolders."""
     counts = {"total": 0, "categories": {}}
@@ -169,8 +175,11 @@ app = FastAPI(
 # CORS middleware for frontend access
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify exact origins
-    allow_credentials=True,
+    allow_origins=_csv_env(
+        "API_CORS_ORIGINS",
+        "http://localhost:3000,http://127.0.0.1:3000",
+    ),
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -264,7 +273,7 @@ if __name__ == "__main__":
     import uvicorn
 
     port = int(os.getenv("API_PORT", "8000"))
-    host = os.getenv("API_HOST", "0.0.0.0")
+    host = os.getenv("API_HOST", "127.0.0.1")
 
     logger.info(f"Starting API server on {host}:{port}")
     uvicorn.run(

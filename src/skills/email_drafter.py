@@ -27,7 +27,7 @@ def draft_email(file_path, base_vault_path, model=None):
     }
     
     try:
-        response = requests.post(f"{OLLAMA_BASE_URL}/api/chat", json=payload)
+        response = requests.post(f"{OLLAMA_BASE_URL}/api/chat", json=payload, timeout=60)
         response.raise_for_status()
         text_content = response.json().get("message", {}).get("content", "")
         
@@ -53,4 +53,3 @@ def draft_email(file_path, base_vault_path, model=None):
         logger.info(f"Successfully drafted email for {file_path.name}")
     except Exception as e:
         logger.error(f"Error drafting email for {file_path.name}: {e}")
-

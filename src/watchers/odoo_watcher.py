@@ -3,6 +3,7 @@ import time
 import logging
 from pathlib import Path
 from datetime import datetime
+from urllib.parse import urlparse
 
 try:
     import odoorpc
@@ -31,8 +32,8 @@ if os.path.exists(env_path):
 
 ODOO_URL = os.getenv("ODOO_URL", "http://localhost:8069")
 ODOO_DB = os.getenv("ODOO_DB", "ai_employee_db")
-ODOO_USERNAME = os.getenv("ODOO_USERNAME", "admin")
-ODOO_PASSWORD = os.getenv("ODOO_PASSWORD", "admin")
+ODOO_USERNAME = os.getenv("ODOO_USERNAME", "")
+ODOO_PASSWORD = os.getenv("ODOO_PASSWORD", "")
 
 
 class OdooWatcher(BaseWatcher):
@@ -56,14 +57,14 @@ class OdooWatcher(BaseWatcher):
 
     def _connect(self):
         """Connect to Odoo using odoorpc or requests."""
+        if not self.username or not self.password:
+            logger.warning("ODOO_USERNAME and ODOO_PASSWORD must be set in .env. OdooWatcher disabled.")
+            return False
+
         if ODOORPC_AVAILABLE:
-            host = self.url.replace("http://", "").replace("https://", "").split(":")[0]
-            port = 8069
-            if ":" in self.url.replace("http://", "").replace("https://", ""):
-                try:
-                    port = int(self.url.split(":")[-1])
-                except ValueError:
-                    pass
+            parsed_url = urlparse(self.url)
+            host = parsed_url.hostname or self.url
+            port = parsed_url.port or (443 if parsed_url.scheme == "https" else 8069)
             self._odoo = odoorpc.ODOO(host, port=port)
             self._odoo.login(self.db, self.username, self.password)
             logger.info("Connected to Odoo via odoorpc")

@@ -5,7 +5,7 @@ services:
     image: postgres:15
     environment:
       POSTGRES_DB: odoo
-      POSTGRES_PASSWORD: odoo
+      POSTGRES_PASSWORD: ${ODOO_POSTGRES_PASSWORD:?Set ODOO_POSTGRES_PASSWORD in .env}
       POSTGRES_USER: odoo
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
@@ -27,7 +27,7 @@ services:
     environment:
       HOST: db
       USER: odoo
-      PASSWORD: odoo
+      PASSWORD: ${ODOO_POSTGRES_PASSWORD:?Set ODOO_POSTGRES_PASSWORD in .env}
       DATABASE: ai_employee_db
     volumes:
       - odoo-web-data:/var/lib/odoo

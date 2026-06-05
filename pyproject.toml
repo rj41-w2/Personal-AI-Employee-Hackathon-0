@@ -3,7 +3,7 @@ name = "personal-ai-employee-hackathon-0"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.11"
 dependencies = [
     "google-api-python-client>=2.194.0",
     "google-auth-httplib2>=0.3.1",
