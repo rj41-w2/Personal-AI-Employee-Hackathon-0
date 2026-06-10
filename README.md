@@ -48,7 +48,7 @@ The system runs as a perception -> reasoning -> action loop:
 ### Installation
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/rj41-w2/Personal-AI-Employee-Hackathon-0
 cd Personal-AI-Employee-Hackathon-0
 
 python -m venv .venv
@@ -59,7 +59,7 @@ cd ai-dashboard
 npm install
 cd ..
 
-copy .env.example .env
+copy .env.example in .env
 ```
 
 Fill in `.env` with your local credentials. Never commit real secrets.

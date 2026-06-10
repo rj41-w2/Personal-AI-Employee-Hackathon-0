@@ -14,6 +14,12 @@ import {
   RefreshCw,
   Zap,
   AlertCircle,
+  X,
+  ChevronRight,
+  ChevronsLeft,
+  ThumbsUp,
+  ThumbsDown,
+  Loader,
 } from "lucide-react";
 
 interface VaultStats {
@@ -45,6 +51,15 @@ interface LoopStatus {
     created_file: string;
     reasoning: string;
   }>;
+}
+
+interface FileData {
+  name: string;
+  category: string;
+  path: string;
+  content: string;
+  size: number;
+  modified: string;
 }
 
 interface DashboardData {
@@ -100,9 +115,13 @@ function MetricCard({
   );
 }
 
-function ActivityItem({ timestamp, message }: Activity) {
+function ActivityItem({ timestamp, message, onClick }: Activity & { onClick?: () => void }) {
   return (
-    <div className="flex items-start gap-3 p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors">
+    <div
+      onClick={onClick}
+      className={`flex items-start gap-3 p-3 bg-gray-50 rounded-xl transition-colors ${onClick ? "hover:bg-gray-100 cursor-pointer" : "hover:bg-gray-100"
+        }`}
+    >
       <div className="p-2 bg-blue-100 rounded-lg">
         <Activity className="w-4 h-4 text-blue-600" />
       </div>
@@ -120,6 +139,35 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [selectedDir, setSelectedDir] = useState<string | null>(null);
+  const [panelFiles, setPanelFiles] = useState<FileData[]>([]);
+  const [panelLoading, setPanelLoading] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<FileData | null>(null);
+
+  const openPanel = useCallback(async (dir: string) => {
+    setSelectedDir(dir);
+    setSelectedFile(null);
+    setPanelLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/api/vault/${dir}`);
+      if (res.ok) {
+        const json = await res.json();
+        setPanelFiles(json.files || []);
+      }
+    } catch {
+      setPanelFiles([]);
+    } finally {
+      setPanelLoading(false);
+    }
+  }, []);
+
+  const [actionLoading, setActionLoading] = useState(false);
+
+  const closePanel = useCallback(() => {
+    setSelectedDir(null);
+    setPanelFiles([]);
+    setSelectedFile(null);
+  }, []);
 
   const fetchData = useCallback(async () => {
     try {
@@ -137,6 +185,26 @@ export default function DashboardPage() {
       setLoading(false);
     }
   }, []);
+
+  const handleFileAction = useCallback(async (target: "approve" | "reject") => {
+    if (!selectedFile) return;
+    setActionLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/api/vault/${target}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: selectedFile.path }),
+      });
+      if (res.ok) {
+        closePanel();
+        fetchData();
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setActionLoading(false);
+    }
+  }, [selectedFile, closePanel, fetchData]);
 
   useEffect(() => {
     const initialFetch = setTimeout(fetchData, 0);
@@ -218,6 +286,7 @@ export default function DashboardPage() {
             icon={<Clock className="w-6 h-6 text-white" />}
             color="from-amber-600 to-orange-500"
             subCategories={stats?.directories.Needs_Action.categories}
+            onClick={() => openPanel("Needs_Action")}
           />
           <MetricCard
             title="Pending Approval"
@@ -225,6 +294,7 @@ export default function DashboardPage() {
             icon={<FileText className="w-6 h-6 text-white" />}
             color="from-blue-600 to-cyan-500"
             subCategories={stats?.directories.Pending_Approval.categories}
+            onClick={() => openPanel("Pending_Approval")}
           />
           <MetricCard
             title="Successfully Executed"
@@ -232,6 +302,7 @@ export default function DashboardPage() {
             icon={<CheckCircle className="w-6 h-6 text-white" />}
             color="from-emerald-600 to-green-500"
             subCategories={stats?.directories.Done.categories}
+            onClick={() => openPanel("Done")}
           />
           <MetricCard
             title="Rejected Tasks"
@@ -239,12 +310,16 @@ export default function DashboardPage() {
             icon={<XCircle className="w-6 h-6 text-white" />}
             color="from-red-600 to-rose-500"
             subCategories={stats?.directories.Rejected.categories}
+            onClick={() => openPanel("Rejected")}
           />
         </div>
 
         {/* Secondary Stats */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-gray-800/50 backdrop-blur rounded-2xl p-6 border border-gray-700">
+          <button
+            onClick={() => openPanel("Approved")}
+            className="bg-gray-800/50 backdrop-blur rounded-2xl p-6 border border-gray-700 hover:bg-gray-800/70 transition-colors text-left"
+          >
             <div className="flex items-center gap-3 mb-4">
               <div className="p-2 bg-purple-500/20 rounded-xl">
                 <TrendingUp className="w-5 h-5 text-purple-400" />
@@ -255,9 +330,12 @@ export default function DashboardPage() {
               {stats?.directories.Approved.total || 0}
             </p>
             <p className="text-xs text-gray-500 mt-2">Tasks ready for MCP execution</p>
-          </div>
+          </button>
 
-          <div className="bg-gray-800/50 backdrop-blur rounded-2xl p-6 border border-gray-700">
+          <button
+            onClick={() => openPanel("Archive")}
+            className="bg-gray-800/50 backdrop-blur rounded-2xl p-6 border border-gray-700 hover:bg-gray-800/70 transition-colors text-left"
+          >
             <div className="flex items-center gap-3 mb-4">
               <div className="p-2 bg-gray-600/20 rounded-xl">
                 <Archive className="w-5 h-5 text-gray-400" />
@@ -268,7 +346,7 @@ export default function DashboardPage() {
               {stats?.directories.Archive.total || 0}
             </p>
             <p className="text-xs text-gray-500 mt-2">Original trigger files archived</p>
-          </div>
+          </button>
 
           {/* Ralph Wiggum Loop Status */}
           <div className="bg-gray-800/50 backdrop-blur rounded-2xl p-6 border border-gray-700">
@@ -315,7 +393,7 @@ export default function DashboardPage() {
             <div className="p-6 space-y-3 max-h-96 overflow-y-auto">
               {recentActivity.length > 0 ? (
                 recentActivity.map((activity, idx) => (
-                  <ActivityItem key={idx} {...activity} />
+                  <ActivityItem key={idx} {...activity} onClick={() => openPanel("Pending_Approval")} />
                 ))
               ) : (
                 <div className="text-center py-8 text-gray-500">
@@ -403,6 +481,99 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
+
+        {/* Side Panel */}
+        {selectedDir && (
+          <div className="fixed inset-0 z-50 flex">
+            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={closePanel} />
+            <div className="relative ml-auto w-full max-w-2xl bg-gray-900 border-l border-gray-700 shadow-2xl overflow-y-auto">
+              <div className="sticky top-0 bg-gray-900/95 backdrop-blur border-b border-gray-700 p-4 flex items-center justify-between z-10">
+                <div>
+                  <h2 className="text-lg font-semibold text-white capitalize">{selectedDir.replace(/_/g, " ")}</h2>
+                  <p className="text-sm text-gray-400">{panelFiles.length} file{panelFiles.length !== 1 ? "s" : ""}</p>
+                </div>
+                <button onClick={closePanel} className="p-2 hover:bg-gray-800 rounded-lg transition-colors">
+                  <X className="w-5 h-5 text-gray-400" />
+                </button>
+              </div>
+
+              <div className="p-4 space-y-3">
+                {panelLoading ? (
+                  <div className="flex items-center justify-center py-16">
+                    <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-500 border-t-transparent" />
+                  </div>
+                ) : selectedFile ? (
+                  <div>
+                    <button
+                      onClick={() => setSelectedFile(null)}
+                      className="flex items-center gap-1 text-sm text-blue-400 hover:text-blue-300 mb-4"
+                    >
+                      <ChevronsLeft className="w-4 h-4" /> Back to list
+                    </button>
+                    <div className="bg-gray-800 rounded-xl p-4 border border-gray-700">
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <h3 className="text-white font-medium break-all">{selectedFile.name}</h3>
+                          <span className="text-xs text-gray-500 capitalize">{selectedFile.category}</span>
+                        </div>
+                        <span className="text-xs text-gray-500">{new Date(selectedFile.modified).toLocaleString()}</span>
+                      </div>
+                      <pre className="text-sm text-gray-300 whitespace-pre-wrap font-sans bg-gray-800 rounded-lg p-4 border border-gray-700 max-h-[60vh] overflow-y-auto">
+                        {selectedFile.content}
+                      </pre>
+                      {selectedDir === "Pending_Approval" && (
+                        <div className="flex gap-3 mt-4">
+                          <button
+                            onClick={() => handleFileAction("approve")}
+                            disabled={actionLoading}
+                            className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl font-medium transition-colors"
+                          >
+                            {actionLoading ? <Loader className="w-4 h-4 animate-spin" /> : <ThumbsUp className="w-4 h-4" />}
+                            Approve
+                          </button>
+                          <button
+                            onClick={() => handleFileAction("reject")}
+                            disabled={actionLoading}
+                            className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white rounded-xl font-medium transition-colors"
+                          >
+                            {actionLoading ? <Loader className="w-4 h-4 animate-spin" /> : <ThumbsDown className="w-4 h-4" />}
+                            Reject
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : panelFiles.length === 0 ? (
+                  <div className="text-center py-16 text-gray-500">
+                    <FileText className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                    <p>No files in this directory</p>
+                  </div>
+                ) : (
+                  panelFiles.map((file, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => setSelectedFile(file)}
+                      className="w-full text-left bg-gray-800/50 hover:bg-gray-800 rounded-xl p-4 border border-gray-700/50 hover:border-gray-600 transition-all group"
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-xs font-medium text-blue-400 capitalize bg-blue-500/10 px-2 py-0.5 rounded">
+                              {file.category}
+                            </span>
+                          </div>
+                          <p className="text-sm text-white truncate">{file.name}</p>
+                          <p className="text-xs text-gray-500 mt-1">{new Date(file.modified).toLocaleString()}</p>
+                        </div>
+                        <ChevronRight className="w-5 h-5 text-gray-600 group-hover:text-gray-400 transition-colors shrink-0 mt-1" />
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Footer */}
         <footer className="mt-8 text-center text-gray-500 text-sm">

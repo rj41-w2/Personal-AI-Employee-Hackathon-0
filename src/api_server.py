@@ -99,14 +99,16 @@ def get_recent_activity(hours: int = 24, limit: int = 20) -> list:
             elif in_activity and line.startswith("- ["):
                 # Extract timestamp and message
                 line = line.strip()
-                if line.startswith("- ["):
-                    line = line[2:]  # Remove leading "-"
-                    if "]:" in line:
-                        timestamp_str, message = line.split("]:", 1)
-                        activities.append({
-                            "timestamp": timestamp_str.strip(),
-                            "message": message.strip()
-                        })
+                # Format: - [2026-06-10 23:05:20] message content
+                if line.startswith("- [") and "] " in line:
+                    after_dash = line[2:]  # Remove leading "- "
+                    ts_end = after_dash.index("] ")
+                    timestamp_str = after_dash[1:ts_end]
+                    message = after_dash[ts_end + 2:]
+                    activities.append({
+                        "timestamp": timestamp_str.strip(),
+                        "message": message.strip()
+                    })
 
         # Filter by hours if specified
         if hours > 0:
@@ -197,7 +199,8 @@ async def root():
             "/api/stats": "Vault directory statistics",
             "/api/recent": "Recent activity (last 24h)",
             "/api/loop": "Ralph Wiggum Loop status",
-            "/api/dashboard": "Full dashboard data"
+            "/api/dashboard": "Full dashboard data",
+            "/api/vault/{dir}": "List files in a vault directory"
         }
     }
 
@@ -247,6 +250,92 @@ async def get_dashboard():
         "recent_activity": recent,
         "loop_status": loop
     }
+
+
+@app.get("/api/vault/{dir_name:path}")
+async def get_vault_contents(dir_name: str):
+    """Get all files in a vault directory with their content."""
+    dir_path = VAULT_PATH / dir_name
+
+    if not dir_path.exists() or not dir_path.is_dir():
+        return {"success": False, "error": "Directory not found"}
+
+    files = []
+    for category_dir in sorted(dir_path.iterdir()):
+        if category_dir.is_dir():
+            for file_path in sorted(category_dir.rglob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True):
+                try:
+                    content = file_path.read_text(encoding="utf-8")
+                    files.append({
+                        "name": file_path.name,
+                        "category": category_dir.name,
+                        "path": str(file_path.relative_to(VAULT_PATH)),
+                        "content": content,
+                        "size": file_path.stat().st_size,
+                        "modified": datetime.fromtimestamp(file_path.stat().st_mtime).isoformat(),
+                    })
+                except Exception as e:
+                    logger.error(f"Error reading {file_path}: {e}")
+
+    return {
+        "success": True,
+        "directory": dir_name,
+        "count": len(files),
+        "files": files,
+    }
+
+
+@app.post("/api/vault/approve")
+async def approve_file(data: dict):
+    """Move a file from Pending_Approval to Approved."""
+    return await _move_file(data, "Approved")
+
+
+@app.post("/api/vault/reject")
+async def reject_file(data: dict):
+    """Move a file from Pending_Approval to Rejected."""
+    return await _move_file(data, "Rejected")
+
+
+async def _move_file(data: dict, target_dir: str) -> dict:
+    """Move a vault file to target directory."""
+    file_path_str = data.get("path")
+    if not file_path_str:
+        return {"success": False, "error": "Missing 'path' in request body"}
+
+    src = VAULT_PATH / file_path_str
+
+    if not src.exists() or not src.is_file():
+        return {"success": False, "error": f"File not found: {file_path_str}"}
+
+    # Extract category (subdirectory name) from source path
+    # e.g. Pending_Approval/email/file.md -> email
+    relative = src.relative_to(VAULT_PATH)
+    parts = relative.parts
+    category = parts[1] if len(parts) > 1 else ""
+
+    dst_dir = VAULT_PATH / target_dir / category
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    dst = dst_dir / src.name
+
+    # Remove existing file with same name in target
+    if dst.exists():
+        dst.unlink()
+
+    # When approving, inject approval metadata so mcp_executor allows live execution
+    if target_dir == "Approved":
+        content = src.read_text(encoding="utf-8")
+        approval_block = (
+            f"Approval: approved\n"
+            f"Approved_By: CEO (Dashboard)\n"
+            f"Approved_At: {datetime.now().isoformat()}\n\n"
+        )
+        src.write_text(approval_block + content, encoding="utf-8")
+
+    src.rename(dst)
+    logger.info(f"Moved {file_path_str} -> {target_dir}/{category}/{src.name}")
+
+    return {"success": True, "target": str(dst.relative_to(VAULT_PATH))}
 
 
 @app.get("/api/health")

@@ -3,19 +3,8 @@ import time
 import logging
 from pathlib import Path
 from datetime import datetime
-from urllib.parse import urlparse
 
-try:
-    import odoorpc
-    ODOORPC_AVAILABLE = True
-except ImportError:
-    ODOORPC_AVAILABLE = False
-
-try:
-    import requests
-    REQUESTS_AVAILABLE = True
-except ImportError:
-    REQUESTS_AVAILABLE = False
+import requests
 
 from base_watcher import BaseWatcher
 
@@ -44,70 +33,99 @@ class OdooWatcher(BaseWatcher):
 
     def __init__(self, vault_path: str, check_interval: int = 300):
         super().__init__(vault_path, check_interval)
-        self.url = ODOO_URL
+        self.url = ODOO_URL.rstrip("/")
         self.db = ODOO_DB
         self.username = ODOO_USERNAME
         self.password = ODOO_PASSWORD
-        self._odoo = None
+        self._uid = None
         self._last_invoice_id = 0
         self._last_payment_id = 0
 
-        if not ODOORPC_AVAILABLE and not REQUESTS_AVAILABLE:
-            logger.warning("No Odoo client library available. OdooWatcher disabled.")
+    def _rpc_call(self, service, method, *args, **kwargs):
+        """Call Odoo JSON-RPC endpoint."""
+        payload = {
+            "jsonrpc": "2.0",
+            "method": "call",
+            "params": {
+                "service": service,
+                "method": method,
+                "args": list(args)
+            },
+            "id": int(time.time())
+        }
+        if kwargs:
+            payload["params"]["kwargs"] = kwargs
+        resp = requests.post(f"{self.url}/jsonrpc", json=payload, timeout=30)
+        resp.raise_for_status()
+        result = resp.json()
+        if result.get("error"):
+            raise Exception(f"Odoo RPC error: {result['error']}")
+        return result.get("result")
 
     def _connect(self):
-        """Connect to Odoo using odoorpc or requests."""
+        """Authenticate with Odoo via JSON-RPC."""
         if not self.username or not self.password:
             logger.warning("ODOO_USERNAME and ODOO_PASSWORD must be set in .env. OdooWatcher disabled.")
             return False
 
-        if ODOORPC_AVAILABLE:
-            parsed_url = urlparse(self.url)
-            host = parsed_url.hostname or self.url
-            port = parsed_url.port or (443 if parsed_url.scheme == "https" else 8069)
-            self._odoo = odoorpc.ODOO(host, port=port)
-            self._odoo.login(self.db, self.username, self.password)
-            logger.info("Connected to Odoo via odoorpc")
+        try:
+            self._uid = self._rpc_call("common", "login", self.db, self.username, self.password)
+            if not self._uid:
+                logger.error("Odoo authentication failed")
+                return False
+            logger.info(f"Connected to Odoo (uid: {self._uid})")
             return True
-        return False
+        except Exception as e:
+            logger.error(f"Odoo connection failed: {e}")
+            return False
 
     def check_for_updates(self) -> list:
         """Check for new invoices or significant events in Odoo."""
-        if not ODOORPC_AVAILABLE:
-            return []
-
         try:
-            if not self._odoo:
+            if not self._uid:
                 if not self._connect():
                     return []
 
             new_items = []
 
-            # Check for invoices created since last check
-            Invoice = self._odoo.env['account.move']
-            new_invoices = Invoice.search([
-                ('move_type', '=', 'out_invoice'),
-                ('id', '>', self._last_invoice_id)
-            ], limit=10, order='id desc')
+            # Search for new invoices
+            invoice_ids = self._rpc_call(
+                "object", "execute",
+                self.db, self._uid, self.password,
+                "account.move", "search",
+                [("move_type", "=", "out_invoice"), ("id", ">", self._last_invoice_id)],
+                limit=10, order="id desc"
+            )
 
-            if new_invoices:
-                self._last_invoice_id = max(new_invoices)
-                for inv_id in new_invoices:
-                    inv = Invoice.browse(inv_id)
+            if invoice_ids:
+                self._last_invoice_id = max(invoice_ids)
+                invoices = self._rpc_call(
+                    "object", "execute",
+                    self.db, self._uid, self.password,
+                    "account.move", "read",
+                    invoice_ids, ["name", "partner_id", "amount_total", "state"]
+                )
+                for inv in invoices:
+                    partner_name = ""
+                    if inv.get("partner_id"):
+                        if isinstance(inv["partner_id"], list):
+                            partner_name = inv["partner_id"][1] if len(inv["partner_id"]) > 1 else str(inv["partner_id"][0])
+                        else:
+                            partner_name = str(inv["partner_id"])
                     new_items.append({
-                        'type': 'new_invoice',
-                        'id': inv_id,
-                        'name': inv.name,
-                        'partner': inv.partner_id.name,
-                        'amount': inv.amount_total,
-                        'state': inv.state
+                        "type": "new_invoice",
+                        "id": inv["id"],
+                        "name": inv.get("name", ""),
+                        "partner": partner_name,
+                        "amount": inv.get("amount_total", 0),
+                        "state": inv.get("state", "")
                     })
 
             return new_items
 
         except Exception as e:
             logger.error(f"Error checking Odoo: {e}")
-            self._odoo = None  # Reset connection
+            self._uid = None
             return []
 
     def create_action_file(self, item) -> Path:

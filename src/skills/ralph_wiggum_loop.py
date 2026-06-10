@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import time
 import logging
@@ -6,14 +7,15 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from dotenv import load_dotenv
 
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(PROJECT_ROOT / "src"))
+
+from gemini_client import call_gemini
+
 logger = logging.getLogger("RalphWiggumLoop")
 
 # Load environment
-PROJECT_ROOT = Path(__file__).parent.parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
-
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
 
 MEMORY_FILE = PROJECT_ROOT / "AI_Employee_Vault" / "loop_memory.json"
 VAULT_PATH = PROJECT_ROOT / "AI_Employee_Vault"
@@ -126,14 +128,7 @@ DECISION: NO"""
 
 Based on this analysis, should I create a follow-up task? Respond with the exact format specified."""
 
-    return {
-        "model": OLLAMA_MODEL,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ],
-        "stream": False
-    }
+    return system_prompt, user_prompt
 
 
 def parse_llm_response(response_text):
@@ -261,13 +256,10 @@ def run_autonomous_reasoning():
     logger.info(f"Ralph Wiggum Loop: Found {len(new_tasks)} new completed tasks to analyze.")
 
     # ORIENT & DECIDE: Generate LLM prompt and get decision
-    prompt_data = generate_followup_prompt(new_tasks)
+    system_prompt, user_prompt = generate_followup_prompt(new_tasks)
 
     try:
-        import requests
-        response = requests.post(f"{OLLAMA_BASE_URL}/api/chat", json=prompt_data, timeout=60)
-        response.raise_for_status()
-        llm_response = response.json().get("message", {}).get("content", "")
+        llm_response = call_gemini(system_prompt, user_prompt)
         logger.info(f"Ralph Wiggum Loop: LLM Response:\n{llm_response}")
     except Exception as e:
         logger.error(f"Ralph Wiggum Loop: LLM call failed: {e}")

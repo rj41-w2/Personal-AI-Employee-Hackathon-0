@@ -1,19 +1,14 @@
 import os
 import time
-import requests
 import logging
+from gemini_client import call_gemini
 
 logger = logging.getLogger("AccountingDrafter")
-
-# Ollama config from environment
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
 
 def draft_accounting_task(file_path, base_vault_path, model=None):
     """
     Draft an Odoo accounting task (invoice creation, report generation, etc.)
     """
-    model = model or OLLAMA_MODEL
     content = file_path.read_text(encoding='utf-8', errors='ignore')
     rules_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "prompts", "accounting_rules.md")
 
@@ -45,19 +40,8 @@ IMPORTANT: Replace angle brackets with actual values. Do NOT deviate from this s
         with open(rules_path, 'r', encoding='utf-8') as f:
             system_rules = f.read()
 
-    payload = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system_rules},
-            {"role": "user", "content": f"Task Content:\n{content}"}
-        ],
-        "stream": False
-    }
-
     try:
-        response = requests.post(f"{OLLAMA_BASE_URL}/api/chat", json=payload, timeout=60)
-        response.raise_for_status()
-        text_content = response.json().get("message", {}).get("content", "")
+        text_content = call_gemini(system_rules, f"Task Content:\n{content}", model)
 
         timestamp = int(time.time())
         parts = text_content.split('## Action:')
